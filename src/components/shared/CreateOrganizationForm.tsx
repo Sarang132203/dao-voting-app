@@ -8,115 +8,116 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import Web3 from 'web3';
+import { contractABI, contractAddress } from '@/contracts/contract';
 
 const createOrganizationSchema = z.object({
-  name: z.string().min(2, { message: 'Organization name must be at least 2 characters.' }),
-  description: z.string().min(10, { message: 'Description must be at least 10 characters.' }),
-  email: z.string().email({ message: 'Invalid email address.' }),
-  website: z.string().url({ message: 'Invalid URL.' }).optional(),
-  logo: z.instanceof(File).optional(),
+  title: z.string().min(2, { message: 'Title must be at least 2 characters.' }),
 });
 
 type CreateOrganizationFormValues = z.infer<typeof createOrganizationSchema>;
 
-const CreateOrganizationForm: React.FC = () => {
-  const [logoPreview, setLogoPreview] = useState<string | ArrayBuffer | null>(null);
+interface CreateOrganizationDialogProps {
+  onOrganizationCreated?: () => void; // Optional callback to trigger re-fetch
+}
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    watch,
-    setValue,
-  } = useForm<CreateOrganizationFormValues>({
+const CreateOrganizationDialog: React.FC<CreateOrganizationDialogProps> = ({ onOrganizationCreated }) => {
+  const [isDialogOpen, setIsDialogOpen] = useState(false); 
+  const [error, setError] = useState<string | null>(null);
+
+  const { register, handleSubmit, formState: { errors }, reset } = useForm<CreateOrganizationFormValues>({
     resolver: zodResolver(createOrganizationSchema),
   });
 
-  const onSubmit: SubmitHandler<CreateOrganizationFormValues> = (data) => {
-    console.log('Form Data:', data);
+  const onSubmit: SubmitHandler<CreateOrganizationFormValues> = async (data) => {
+    try {
+      const { ethereum } = window as any;
+      if (!ethereum) {
+        alert('MetaMask not found!');
+        return;
+      }
+  
+      const web3 = new Web3(ethereum);
+      const accounts = await web3.eth.getAccounts();
+      if (accounts.length === 0) {
+        alert('No accounts found');
+        return;
+      }
+  
+      const contract = new web3.eth.Contract(contractABI, contractAddress);
+      const response = await contract.methods.createDAO(data.title).send({ from: accounts[0] });
+  
+      // Use optional chaining to safely access events
+      const daoCreatedEvent = response.events?.DAOCreated;
+      if (daoCreatedEvent) {
+        alert('DAO created successfully!');
+        if (onOrganizationCreated) onOrganizationCreated(); // Trigger re-fetch
+      } else {
+        alert('DAO creation failed.');
+      }
+      
+      setIsDialogOpen(false);
+      reset();
+    } catch (err) {
+      console.error(err);
+      setError('Failed to create DAO');
+    }
+  };
+  
+  const handleOpenDialog = () => {
+    setIsDialogOpen(true); 
   };
 
-  const handleLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) { 
-      setValue('logo', file);
-      const reader = new FileReader();
-      reader.onloadend = () => setLogoPreview(reader.result);
-      reader.readAsDataURL(file);
-    }
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    reset(); 
   };
 
   return (
-    <Card className="max-w-lg mx-auto mt-10 p-6">
-      <CardHeader>
-        <CardTitle>Create an Organization</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div>
-            <Label htmlFor="name">Organization Name <span className="text-red-500">*</span></Label>
-            <Input
-              id="name"
-              placeholder="Enter organization name"
-              {...register('name')}
-              className="mt-2"
-            />
-            {errors.name && <p className="text-red-500 mt-1">{errors.name.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="description">Description <span className="text-red-500">*</span></Label>
-            <Input
-              id="description"
-              placeholder="Enter a brief description"
-              {...register('description')}
-              className="mt-2"
-            />
-            {errors.description && <p className="text-red-500 mt-1">{errors.description.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="email">Contact Email <span className="text-red-500">*</span></Label>
-            <Input
-              id="email"
-              placeholder="Enter contact email"
-              {...register('email')}
-              className="mt-2"
-            />
-            {errors.email && <p className="text-red-500 mt-1">{errors.email.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="website">Website</Label>
-            <Input
-              id="website"
-              placeholder="Enter organization website"
-              {...register('website')}
-              className="mt-2"
-            />
-            {errors.website && <p className="text-red-500 mt-1">{errors.website.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="logo">Organization Logo</Label>
-            <input
-              type="file"
-              id="logo"
-              accept="image/*"
-              onChange={handleLogoChange}
-              className="mt-2"
-            />
-            {logoPreview && <img src={logoPreview as string} alt="Logo preview" className="mt-2 w-32 h-32 object-cover" />}
-            {errors.logo && <p className="text-red-500 mt-1">{errors.logo.message}</p>}
-          </div>
-          <Button type="submit" className="w-full bg-gradient-to-r from-pink-500 to-yellow-500 text-black font-semibold rounded-lg shadow-lg hover:scale-105 transition-transform">
-            Create Organization
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+    <>
+      <Button
+        onClick={handleOpenDialog}
+        className="bg-gradient-to-r from-purple-500 via-pink-500 to-yellow-500 text-white text-xl mb-6 px-4 py-2 rounded-3xl flex items-center justify-items-start w-64 h-16 text-center overflow-hidden"
+      >
+        Create Organization
+      </Button>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-lg mx-auto p-6">
+          <DialogHeader>
+            <DialogTitle>Create an Organization</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <div>
+              <Label htmlFor="title">Title <span className="text-red-500">*</span></Label>
+              <Input
+                id="title"
+                placeholder="Enter organization title"
+                {...register('title')}
+                className="mt-2"
+              />
+              {errors.title && <p className="text-red-500 mt-1">{errors.title.message}</p>}
+            </div>
+            <DialogFooter>
+              <Button type="submit" className="bg-gradient-to-r from-pink-500 to-yellow-500 text-black font-semibold rounded-lg shadow-lg">
+                Submit
+              </Button>
+              <Button type="button" variant="ghost" onClick={handleCloseDialog}>
+                Cancel
+              </Button>
+            </DialogFooter>
+          </form>
+          {error && <p className="text-red-500 mt-4">{error}</p>} {/* Display error message if any */}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
-export default CreateOrganizationForm;
+export default CreateOrganizationDialog;

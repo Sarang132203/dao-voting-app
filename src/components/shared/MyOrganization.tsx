@@ -1,126 +1,162 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FaChevronDown } from 'react-icons/fa';
+import Web3 from 'web3';
+import { contractABI, contractAddress } from '@/contracts/contract';
+import CreateOrganizationDialog from '@/components/shared/CreateOrganizationForm';
+import OrganizationDialog from '@/components/shared/OrganizationDialog'; // Import the new dialog component
 
 interface Organization {
   id: number;
   name: string;
-  logo: string;
 }
-
-interface Proposal {
-  id: number;
-  title: string;
-  logo: string;
-}
-
-const organizations: Organization[] = [
-  { id: 1, name: 'Accelchain', logo: '/images/accelchain.jpeg' },
-  { id: 2, name: 'Microsoft', logo: '/images/microsoft.png' },
-  { id: 3, name: 'Apple', logo: '/images/apple.png' },
-  { id: 4, name: 'Reliance', logo: '/images/reliance.png' },
-  { id: 5, name: 'Tata', logo: '/images/tata.png' },
-  { id: 6, name: 'MitAdt', logo: '/images/mitadt.jpeg' },
-];
-
-const proposalsData: Proposal[] = [
-  { id: 1, title: 'Proposal 1', logo: '/images/tata.png' },
-  { id: 2, title: 'Proposal 2', logo: '/images/reliance.png' },
-  { id: 3, title: 'Proposal 3', logo: '/images/microsoft.png' },
-];
 
 const MyOrganizations: React.FC = () => {
-  const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
-  const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [adminOrganizations, setAdminOrganizations] = useState<Organization[]>([]);
+  const [memberOrganizations, setMemberOrganizations] = useState<Organization[]>([]);
+  const [isDialogOpen, setIsDialogOpen] = useState(false); // For controlling dialog visibility
+  const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null); // To track selected org
   const router = useRouter();
 
+  useEffect(() => {
+    const fetchOrganizations = async () => {
+      try {
+        const { ethereum } = window as any;
+        if (!ethereum) {
+          alert('MetaMask not found!');
+          return;
+        }
+
+        const web3 = new Web3(ethereum);
+        const accounts = await web3.eth.getAccounts();
+        const contract = new web3.eth.Contract(contractABI, contractAddress);
+
+        if (accounts.length === 0) {
+          alert('No accounts found');
+          return;
+        }
+
+        const adminOrgIds: number[] = await contract.methods.getDAOsForSender_admin().call({ from: accounts[0] });
+        const memberOrgIds: number[] = await contract.methods.getDAOsForSender_member().call({ from: accounts[0] });
+
+        const adminOrgs = await Promise.all(
+          adminOrgIds.map(async (id: number) => {
+            const name = await contract.methods.returnDaoName(id).call();
+            return { id, name: name || 'Unknown DAO' };
+          })
+        );
+
+        const memberOrgs = await Promise.all(
+          memberOrgIds.map(async (id: number) => {
+            const name = await contract.methods.returnDaoName(id).call();
+            return { id, name: name || 'Unknown DAO' };
+          })
+        );
+
+        setAdminOrganizations(adminOrgs as Organization[]);
+        setMemberOrganizations(memberOrgs as Organization[]);
+      } catch (error) {
+        console.error('Error fetching DAOs:', error);
+      }
+    };
+
+    fetchOrganizations();
+  }, []);
+
   const handleOrgClick = (org: Organization) => {
-    setSelectedOrg(org);
-    setIsPopupOpen(true);
+    setSelectedOrganization(org);
+    setIsDialogOpen(true); // Open the dialog when org is clicked
   };
 
-  const handleProposalClick = (proposal: Proposal) => {
-    router.push(`/ProposalDetails/${proposal.id}`);
-  };
-
-  const handleCreateProposalClick = () => {
-    if (selectedOrg) {
-      router.push(`/CreateProposalForm?organization=${selectedOrg.name}`);
-    }
+  const handleDialogClose = () => {
+    setIsDialogOpen(false);
+    setSelectedOrganization(null);
   };
 
   return (
     <div className="p-12 text-white max-w-screen-xl mx-auto">
-      <h1 className="text-3xl font-semibold mb-10 text-center bg-gradient-to-r from-pink-400 to-yellow-500 bg-clip-text text-transparent">
-        My Organizations
-      </h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {organizations.map((org) => (
-          <div
-            key={org.id}
-            className="relative flex flex-col items-center bg-white shadow-lg rounded-lg overflow-hidden transition-transform transform hover:scale-105 hover:shadow-2xl group"
-            style={{ width: '320px', height: '300px' }}
-            onClick={() => handleOrgClick(org)}
-          >
-            <div className="relative w-full h-52 overflow-hidden">
-              <img
-                src={org.logo}
-                alt={org.name}
-                className="w-fit h-fit object-center"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-violet-400 to-transparent transform -translate-x-full group-hover:translate-x-0 transition-transform duration-500"></div>
-            </div>
-            <div className="p-4 text-center">
-              <h2 className="text-lg font-semibold text-purple-900">{org.name}</h2>
-            </div>
-          </div>
-        ))}
+      {/* Add Create Organization Button */}
+      <div className="mb-6 flex justify-center">
+        <CreateOrganizationDialog />
       </div>
 
-      <Dialog open={isPopupOpen} onOpenChange={setIsPopupOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Proposals for {selectedOrg?.name}</DialogTitle>
-          </DialogHeader>
-          <div>
-            <button
-              className="flex items-center justify-between w-full p-4 bg-gray-100 rounded"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            >
-              <span>Proposals</span>
-              <span className={`transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`}>
-                <FaChevronDown />
-              </span>
-            </button>
-            {isDropdownOpen && (
-              <div className="max-h-64 overflow-y-auto mt-2">
-                {proposalsData.map((proposal) => (
-                  <div
-                    key={proposal.id}
-                    className="flex items-center space-x-4 mb-4 cursor-pointer"
-                    onClick={() => handleProposalClick(proposal)}
-                  >
-                    <img src={proposal.logo} alt={proposal.title} className="w-8 h-8" />
-                    <p>{proposal.title}</p>
-                  </div>
-                ))}
+      <div
+        className="mb-10 p-6 rounded-lg border-2"
+        style={{
+          background: 'linear-gradient(to bottom, #002d4d, #003d6b, #00557d)',
+          borderColor: '#00557d',
+        }}
+      >
+        <h2 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-pink-500 to-purple-600 text-center">
+          Organizations You Admin
+        </h2>
+        <div className="flex flex-wrap justify-center gap-8">
+          {adminOrganizations.length > 0 ? (
+            adminOrganizations.map((org) => (
+              <div
+                key={org.id}
+                className="relative flex flex-col items-center shadow-lg rounded-lg overflow-hidden transition-transform transform hover:scale-105 hover:shadow-2xl group"
+                style={{
+                  width: '320px',
+                  height: '300px',
+                  background: 'linear-gradient(to bottom, #003d6b, #00557d)',
+                }}
+                onClick={() => handleOrgClick(org)}
+              >
+                <div className="p-4 text-center">
+                  <h2 className="text-lg font-semibold text-white">{org.name}</h2>
+                </div>
               </div>
-            )}
-          </div>
-          <div className="mt-4 flex justify-end">
-            <button
-              className="bg-blue-500 text-white px-4 py-2 rounded"
-              onClick={handleCreateProposalClick}
-            >
-              Create Proposal
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+            ))
+          ) : (
+            <p>No admin organizations found.</p>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="p-6 rounded-lg border-2"
+        style={{
+          background: 'linear-gradient(to bottom, #004d70, #008793)',
+          borderColor: '#00557d',
+        }}
+      >
+        <h2 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-pink-500 to-purple-600 text-center">
+          Organizations You’re a Member Of
+        </h2>
+        <div className="flex flex-wrap justify-center gap-8">
+          {memberOrganizations.length > 0 ? (
+            memberOrganizations.map((org) => (
+              <div
+                key={org.id}
+                className="relative flex flex-col items-center shadow-lg rounded-lg overflow-hidden transition-transform transform hover:scale-105 hover:shadow-2xl group"
+                style={{
+                  width: '320px',
+                  height: '300px',
+                  background: 'linear-gradient(to bottom, #004d70, #008793)',
+                }}
+                onClick={() => handleOrgClick(org)}
+              >
+                <div className="p-4 text-center">
+                  <h2 className="text-lg font-semibold text-white">{org.name}</h2>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p>No member organizations found.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Organization Actions Dialog */}
+      {selectedOrganization && (
+        <OrganizationDialog
+          isOpen={isDialogOpen}
+          onClose={handleDialogClose}
+          daoId={selectedOrganization.id}
+        />
+      )}
     </div>
   );
 };
